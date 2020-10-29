@@ -66,6 +66,7 @@ public class TopicPublishInfo {
         this.haveTopicRouterInfo = haveTopicRouterInfo;
     }
 
+    // lastBrokerName 的主要目的是换一个 broker
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
         if (lastBrokerName == null) {
             return selectOneMessageQueue();
@@ -76,6 +77,8 @@ public class TopicPublishInfo {
                 if (pos < 0)
                     pos = 0;
                 MessageQueue mq = this.messageQueueList.get(pos);
+                // 和上一个使用不同的 broker，如果只有一个 broker 那就只能使用同一个了
+                // 为啥非得使用不同的 broker 呢？如果是发消息成功了，是不会到这里的，在重试的时候才会走到这里，为了避开故障的 broker
                 if (!mq.getBrokerName().equals(lastBrokerName)) {
                     return mq;
                 }

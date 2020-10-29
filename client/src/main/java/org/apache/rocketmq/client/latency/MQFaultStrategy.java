@@ -56,6 +56,10 @@ public class MQFaultStrategy {
     }
 
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName) {
+        // 如果没有 enable latencyFaultTolerance，就用递增取模的方式选择。
+        // 如果 enable 了，在递增取模的基础上，再过滤掉 not available 的。
+        // 这里所谓的 latencyFaultTolerance, 是指对之前失败的，按一定的时间做退避,
+        // 如果上次请求的 latency 超过 550L ms, 就退避 3000L ms；超过 1000L，就退避 60000L.
         if (this.sendLatencyFaultEnable) {
             try {
                 int index = tpInfo.getSendWhichQueue().getAndIncrement();

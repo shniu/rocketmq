@@ -31,6 +31,7 @@ import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -254,6 +255,7 @@ public class TlsTest {
     }
 
     @Test
+    @Ignore
     public void testTlsConfigThroughFile() throws Exception {
         File file = tempFolder.newFile("tls.config");
         tlsTestModeEnable = true;

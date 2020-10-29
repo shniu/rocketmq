@@ -41,6 +41,8 @@ import org.apache.rocketmq.srvutil.ServerUtil;
 import org.apache.rocketmq.srvutil.ShutdownHookThread;
 import org.slf4j.LoggerFactory;
 
+// NamesrvStartup 管理了 NamesrvController，方便启动和退出等
+// 我们完全可以甩开 NamesrvStartup，自定义 NamesrvController 的实例，并启动
 public class NamesrvStartup {
 
     private static InternalLogger log;
@@ -54,13 +56,16 @@ public class NamesrvStartup {
     public static NamesrvController main0(String[] args) {
 
         try {
+            // 创建 controller 实例，它代表一个 Namesrv 实例
             NamesrvController controller = createNamesrvController(args);
+            // 启动，最后调用的是 controller.start()
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
             System.out.printf("%s%n", tip);
             return controller;
         } catch (Throwable e) {
+            // 出现异常了就主动异常退出
             e.printStackTrace();
             System.exit(-1);
         }

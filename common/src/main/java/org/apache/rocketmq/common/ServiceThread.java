@@ -127,6 +127,7 @@ public abstract class ServiceThread implements Runnable {
     }
 
     protected void waitForRunning(long interval) {
+        // 如果获取到 notified 信号，从等待中恢复，立即执行 commit 操作
         if (hasNotified.compareAndSet(true, false)) {
             this.onWaitEnd();
             return;

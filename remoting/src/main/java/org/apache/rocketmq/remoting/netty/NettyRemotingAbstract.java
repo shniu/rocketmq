@@ -190,11 +190,17 @@ public abstract class NettyRemotingAbstract {
      * @param cmd request command.
      */
     public void processRequestCommand(final ChannelHandlerContext ctx, final RemotingCommand cmd) {
+        // 根据命令的类型，也就是 requestCode，识别不同的命令，然后找到对应的命令处理器，如果没有注册到 processorTable 中
+        // 就是使用默认的命令处理器进行处理
         final Pair<NettyRequestProcessor, ExecutorService> matched = this.processorTable.get(cmd.getCode());
+        // 默认处理器在 Broker 服务中是 AdminBrokerProcessor
         final Pair<NettyRequestProcessor, ExecutorService> pair = null == matched ? this.defaultRequestProcessor : matched;
+        // opaque 是每个请求的请求序号，标识每个请求，这样 response 就可以和 request 对应上
         final int opaque = cmd.getOpaque();
 
+        // 如果 pair == null，就表示没有找到任何的命令处理器，返回 Request Code Not Support
         if (pair != null) {
+            // 这是一个可被回调的代码块，主要作用是开启在线程池中的业务处理
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
@@ -220,8 +226,10 @@ public abstract class NettyRemotingAbstract {
                                 }
                             }
                         };
+                        // 判断请求处理器是否支持异步处理
                         if (pair.getObject1() instanceof AsyncNettyRequestProcessor) {
                             AsyncNettyRequestProcessor processor = (AsyncNettyRequestProcessor)pair.getObject1();
+                            // 调用异步处理
                             processor.asyncProcessRequest(ctx, cmd, callback);
                         } else {
                             NettyRequestProcessor processor = pair.getObject1();
@@ -243,6 +251,8 @@ public abstract class NettyRemotingAbstract {
                 }
             };
 
+            // 预先看一下当前命令处理器是不是拒绝请求，比如说 Slave 上要关闭写动作，触发了流控
+            //  比如 OS PageCache Busy
             if (pair.getObject1().rejectRequest()) {
                 final RemotingCommand response = RemotingCommand.createResponseCommand(RemotingSysResponseCode.SYSTEM_BUSY,
                     "[REJECTREQUEST]system busy, start flow control for a while");
@@ -452,6 +462,8 @@ public abstract class NettyRemotingAbstract {
         throws InterruptedException, RemotingTooMuchRequestException, RemotingTimeoutException, RemotingSendRequestException {
         long beginStartTime = System.currentTimeMillis();
         final int opaque = request.getOpaque();
+
+        // 流控 ？
         boolean acquired = this.semaphoreAsync.tryAcquire(timeoutMillis, TimeUnit.MILLISECONDS);
         if (acquired) {
             final SemaphoreReleaseOnlyOnce once = new SemaphoreReleaseOnlyOnce(this.semaphoreAsync);

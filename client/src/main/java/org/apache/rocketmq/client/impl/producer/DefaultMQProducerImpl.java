@@ -102,7 +102,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         new ConcurrentHashMap<String, TopicPublishInfo>();
     private final ArrayList<SendMessageHook> sendMessageHookList = new ArrayList<SendMessageHook>();
     private final RPCHook rpcHook;
+    // 异步发送消息的阻塞队列
     private final BlockingQueue<Runnable> asyncSenderThreadPoolQueue;
+    // 执行异步发送消息的线程池
     private final ExecutorService defaultAsyncSenderExecutor;
     private final Timer timer = new Timer("RequestHouseKeepingService", true);
     protected BlockingQueue<Runnable> checkRequestQueue;
@@ -547,6 +549,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final SendCallback sendCallback,
         final long timeout
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+        // 检测 Producer 的状态是否在 Running
         this.makeSureStateOK();
         Validators.checkMessage(msg, this.defaultMQProducer);
         final long invokeID = random.nextLong();
@@ -566,6 +569,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             int times = 0;
             String[] brokersSent = new String[timesTotal];
             for (; times < timesTotal; times++) {
+                // 记录上一个发送消息的 Broker name
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
 
                 // 选择一个 MessageQueue，也是 Producer 端做负载的地方
@@ -606,11 +610,12 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                                         continue;
                                     }
                                 }
-
+                                // 发送成功返回结果，这个时候消息已经成功投递到 Broker
                                 return sendResult;
                             default:
                                 break;
                         }
+                    // 异常处理
                     } catch (RemotingException e) {
                         endTimestamp = System.currentTimeMillis();
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, true);

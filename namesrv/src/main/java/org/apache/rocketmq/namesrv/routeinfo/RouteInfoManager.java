@@ -131,6 +131,8 @@ public class RouteInfoManager {
                 Map<Long, String> brokerAddrsMap = brokerData.getBrokerAddrs();
                 //Switch slave to master: first remove <1, IP:PORT> in namesrv, then add <0, IP:PORT>
                 //The same IP:PORT must only have one record in brokerAddrTable
+                // 注册进来的 broker，如果已经在 brokerAddrTable 中，但是 brokerId 发生了变化，
+                // 有可能是因为从 slave 被提升为 master，要先删除然后再添加
                 Iterator<Entry<Long, String>> it = brokerAddrsMap.entrySet().iterator();
                 while (it.hasNext()) {
                     Entry<Long, String> item = it.next();

@@ -25,10 +25,15 @@ import org.apache.rocketmq.client.log.ClientLogger;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.remoting.RPCHook;
 
+// 这个用来管理 MQ Client，因为在一个进程中可以启动多个 MQClientInstance
+// 为每一个 独立的 Producer 或者 Consumer 都维护自己的 MQClientInstance，区分的方式是为每个 Client 分配一个 clientId
 public class MQClientManager {
     private final static InternalLogger log = ClientLogger.getLog();
+    // 单例模式
     private static MQClientManager instance = new MQClientManager();
+    // 用来记录是第几个 MQClientInstance
     private AtomicInteger factoryIndexGenerator = new AtomicInteger();
+    // 存放 MQClientInstance 的映射表，保证了同一个 clientId 不会重复创建，同一个 clientId 使用的是同一个 MQClientInstance
     private ConcurrentMap<String/* clientId */, MQClientInstance> factoryTable =
         new ConcurrentHashMap<String, MQClientInstance>();
 
@@ -44,10 +49,12 @@ public class MQClientManager {
         return getOrCreateMQClientInstance(clientConfig, null);
     }
 
+    // 获取 MQClientInstance，如果不存在就创建一个新的
     public MQClientInstance getOrCreateMQClientInstance(final ClientConfig clientConfig, RPCHook rpcHook) {
         String clientId = clientConfig.buildMQClientId();
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
+            // new
             instance =
                 new MQClientInstance(clientConfig.cloneClientConfig(),
                     this.factoryIndexGenerator.getAndIncrement(), clientId, rpcHook);

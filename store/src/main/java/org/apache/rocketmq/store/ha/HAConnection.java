@@ -33,7 +33,9 @@ public class HAConnection {
     private final HAService haService;
     private final SocketChannel socketChannel;
     private final String clientAddr;
+    // 写线程服务负责把要同步的数据发给 slave
     private WriteSocketService writeSocketService;
+    //
     private ReadSocketService readSocketService;
 
     private volatile long slaveRequestOffset = -1;
@@ -53,6 +55,7 @@ public class HAConnection {
         this.haService.getConnectionCount().incrementAndGet();
     }
 
+    // 启动读 socket channel 的线程和启动写 socket channel 的线程
     public void start() {
         this.readSocketService.start();
         this.writeSocketService.start();
@@ -78,6 +81,8 @@ public class HAConnection {
         return socketChannel;
     }
 
+    // 从 socket 中读数据出来，数据是从 slave 发来的
+    //  主要职责：读 slave 同步的最大偏移量，然后更新本地复制状态，然后通知写线程再去写点数据过去
     class ReadSocketService extends ServiceThread {
         private static final int READ_MAX_BUFFER_SIZE = 1024 * 1024;
         private final Selector selector;
@@ -100,6 +105,7 @@ public class HAConnection {
             while (!this.isStopped()) {
                 try {
                     this.selector.select(1000);
+                    // 处理读事件
                     boolean ok = this.processReadEvent();
                     if (!ok) {
                         HAConnection.log.error("processReadEvent error");
@@ -155,15 +161,21 @@ public class HAConnection {
 
             while (this.byteBufferRead.hasRemaining()) {
                 try {
+                    // 从 socket channel 中读数据，最多一次取 1M
                     int readSize = this.socketChannel.read(this.byteBufferRead);
                     if (readSize > 0) {
                         readSizeZeroTimes = 0;
+                        // 更新读取时间戳
                         this.lastReadTimestamp = HAConnection.this.haService.getDefaultMessageStore().getSystemClock().now();
+                        // 如果当次读到的数据大于 8 字节，这个是因为 slave 向 master 写入的是 CommitLog 的 offset，这是一个 long 类型的
+                        // 数据，用 8 字节表示
                         if ((this.byteBufferRead.position() - this.processPosition) >= 8) {
+                            // 这里计算 pos 主要是为了读取最后一个可用的 8 字节，前边的就自动丢掉
                             int pos = this.byteBufferRead.position() - (this.byteBufferRead.position() % 8);
                             long readOffset = this.byteBufferRead.getLong(pos - 8);
                             this.processPosition = pos;
 
+                            // 更新 slave 已经确认接收到的 offset
                             HAConnection.this.slaveAckOffset = readOffset;
                             if (HAConnection.this.slaveRequestOffset < 0) {
                                 HAConnection.this.slaveRequestOffset = readOffset;
@@ -214,6 +226,8 @@ public class HAConnection {
 
             while (!this.isStopped()) {
                 try {
+                    // 这里的 selector 用来管理 SocketChannel，注册了 OP_WRITE 事件
+                    // 超时返回，继续后面的逻辑
                     this.selector.select(1000);
 
                     if (-1 == HAConnection.this.slaveRequestOffset) {
@@ -242,6 +256,7 @@ public class HAConnection {
                             + "], and slave request " + HAConnection.this.slaveRequestOffset);
                     }
 
+                    // ??
                     if (this.lastWriteOver) {
 
                         long interval =
@@ -327,6 +342,7 @@ public class HAConnection {
             HAConnection.log.info(this.getServiceName() + " service end");
         }
 
+        // 执行写数据的逻辑
         private boolean transferData() throws Exception {
             int writeSizeZeroTimes = 0;
             // Write Header
@@ -353,6 +369,7 @@ public class HAConnection {
             // Write Body
             if (!this.byteBufferHeader.hasRemaining()) {
                 while (this.selectMappedBufferResult.getByteBuffer().hasRemaining()) {
+                    // 一次写一批消息给 slave，这一批消息可能只有一条，也可能有很多条
                     int writeSize = this.socketChannel.write(this.selectMappedBufferResult.getByteBuffer());
                     if (writeSize > 0) {
                         writeSizeZeroTimes = 0;

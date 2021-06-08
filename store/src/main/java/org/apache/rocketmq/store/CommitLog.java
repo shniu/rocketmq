@@ -571,6 +571,7 @@ public class CommitLog {
         final int tranType = MessageSysFlag.getTransactionValue(msg.getSysFlag());
         if (tranType == MessageSysFlag.TRANSACTION_NOT_TYPE
                 || tranType == MessageSysFlag.TRANSACTION_COMMIT_TYPE) {
+            // 延迟消息处理
             // Delay Delivery
             if (msg.getDelayTimeLevel() > 0) {
                 if (msg.getDelayTimeLevel() > this.defaultMessageStore.getScheduleMessageService().getMaxDelayLevel()) {
@@ -660,8 +661,11 @@ public class CommitLog {
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).incrementAndGet();
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).addAndGet(result.getWroteBytes());
 
+        // 提交刷盘请求
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, putMessageResult, msg);
+        // 提交复制请求
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, putMessageResult, msg);
+        // 这里需要等待 flushResultFuture 和 replicaResultFuture 的结果
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
             if (flushStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(PutMessageStatus.FLUSH_DISK_TIMEOUT);
@@ -883,6 +887,7 @@ public class CommitLog {
             log.warn("[NOTIFYME]putMessage in lock cost time(ms)={}, bodyLength={} AppendMessageResult={}", elapsedTimeInLock, msg.getBody().length, result);
         }
 
+        // ? 为什么要在 isWarmMapedFileEnable 的时候做 unlockMappedFile
         if (null != unlockMappedFile && this.defaultMessageStore.getMessageStoreConfig().isWarmMapedFileEnable()) {
             this.defaultMessageStore.unlockMappedFile(unlockMappedFile);
         }
@@ -903,24 +908,30 @@ public class CommitLog {
                                                                   MessageExt messageExt) {
         // Synchronization flush
         if (FlushDiskType.SYNC_FLUSH == this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
+            // flushCommitLogService 是一个独立的线程在运行
             final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
+            // 同步刷盘等待策略
             if (messageExt.isWaitStoreMsgOK()) {
                 GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(),
                         this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout());
                 service.putRequest(request);
+                // 这里并没有直接返回 CompletableFuture.completedFuture，说明是同步等待
                 return request.future();
             } else {
+                // 这里只是唤醒，并且直接返回 CompletableFuture.completedFuture，可以看作是异步的
                 service.wakeup();
                 return CompletableFuture.completedFuture(PutMessageStatus.PUT_OK);
             }
         }
         // Asynchronous flush
         else {
+            // 异步刷盘仅仅是尝试唤醒异步刷盘的线程
             if (!this.defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
                 flushCommitLogService.wakeup();
             } else  {
                 commitLogService.wakeup();
             }
+            // 直接返回CompletableFuture.completedFuture PUT_OK, 就是异步操作
             return CompletableFuture.completedFuture(PutMessageStatus.PUT_OK);
         }
     }
@@ -1404,9 +1415,13 @@ public class CommitLog {
         private volatile List<GroupCommitRequest> requestsRead = new ArrayList<GroupCommitRequest>();
 
         public synchronized void putRequest(final GroupCommitRequest request) {
+            // 把 put message 的请求放入 请求写入列表中，如果这个时候正在做 doCommit 操作的话，
+            // 需要等待 doCommit 结束后才能进入，putRequest 所在的进程进入 requestsWrite 对象锁的等待队列
+            // -> 看 doCommit() 方法中的互斥锁争抢
             synchronized (this.requestsWrite) {
                 this.requestsWrite.add(request);
             }
+            // 尝试发送 notified 信号
             if (hasNotified.compareAndSet(false, true)) {
                 waitPoint.countDown(); // notify
             }
@@ -1429,6 +1444,9 @@ public class CommitLog {
                             flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
 
                             if (!flushOK) {
+                                // 调用 flush，最终调用 mappedFile.flush,
+                                // 然后调用 fileChannel.force(false) or mappedByteBuffer.force()
+                                // force 动作就是强制刷盘，将 pageCache 的数据写到磁盘上
                                 CommitLog.this.mappedFileQueue.flush(0);
                             }
                         }
@@ -1453,9 +1471,12 @@ public class CommitLog {
         public void run() {
             CommitLog.log.info(this.getServiceName() + " service started");
 
+            // Spin 直到停止
             while (!this.isStopped()) {
                 try {
+                    // 在等待和运行中切换，10ms 是超时时间，防止频繁的线程调度，降低 CPU 上下文切换频率
                     this.waitForRunning(10);
+                    // 执行 Commit 操作
                     this.doCommit();
                 } catch (Exception e) {
                     CommitLog.log.warn(this.getServiceName() + " service has exception. ", e);

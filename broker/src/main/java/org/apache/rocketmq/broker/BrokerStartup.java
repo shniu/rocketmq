@@ -150,6 +150,7 @@ public class BrokerStartup {
             String namesrvAddr = brokerConfig.getNamesrvAddr();
             if (null != namesrvAddr) {
                 try {
+                    // 这里主要是验证配置的 Namesrv 的地址是合法的
                     String[] addrArray = namesrvAddr.split(";");
                     for (String addr : addrArray) {
                         RemotingUtil.string2SocketAddress(addr);
@@ -162,6 +163,7 @@ public class BrokerStartup {
                 }
             }
 
+            // 根据 Broker 的角色配置和检查 brokerId
             switch (messageStoreConfig.getBrokerRole()) {
                 case ASYNC_MASTER:
                 case SYNC_MASTER:
@@ -178,11 +180,15 @@ public class BrokerStartup {
                     break;
             }
 
+            // 检查是否启用了 DLedgerCommitLog, 如果启用了禁用掉 brokerId，都设置为 -1
             if (messageStoreConfig.isEnableDLegerCommitLog()) {
                 brokerConfig.setBrokerId(-1);
             }
 
+            // HaListenPort 是 Master Broker 和 Slave Broker 之间同步消息的端口
             messageStoreConfig.setHaListenPort(nettyServerConfig.getListenPort() + 1);
+
+            // 配置日志
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             JoranConfigurator configurator = new JoranConfigurator();
             configurator.setContext(lc);
@@ -225,6 +231,7 @@ public class BrokerStartup {
                 System.exit(-3);
             }
 
+            // hook when JVM shutdown
             Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
                 private volatile boolean hasShutdown = false;
                 private AtomicInteger shutdownTimes = new AtomicInteger(0);

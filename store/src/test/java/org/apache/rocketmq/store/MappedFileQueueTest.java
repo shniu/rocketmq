@@ -29,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class MappedFileQueueTest {
     @Test
     public void testGetLastMappedFile() {
-        final String fixedMsg = "0123456789abcdef";
+        // final String fixedMsg = "0123456789abcdef";
+        final String fixedMsg = "012345678";
 
         MappedFileQueue mappedFileQueue =
             new MappedFileQueue("target/unit_test_store/a/", 1024, null);
@@ -38,6 +39,11 @@ public class MappedFileQueueTest {
             MappedFile mappedFile = mappedFileQueue.getLastMappedFile(0);
             assertThat(mappedFile).isNotNull();
             assertThat(mappedFile.appendMessage(fixedMsg.getBytes())).isTrue();
+        }
+
+        System.out.println(fixedMsg.getBytes().length);
+        for (MappedFile mappedFile : mappedFileQueue.getMappedFiles()) {
+            System.out.println(mappedFile.getFileName());
         }
 
         mappedFileQueue.shutdown(1000);

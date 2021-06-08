@@ -42,6 +42,7 @@ import org.apache.rocketmq.store.util.LibC;
 import sun.nio.ch.DirectBuffer;
 
 public class MappedFile extends ReferenceResource {
+    // 操作系统 Page Size 4KB
     public static final int OS_PAGE_SIZE = 1024 * 4;
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
@@ -59,6 +60,7 @@ public class MappedFile extends ReferenceResource {
     protected ByteBuffer writeBuffer = null;
     protected TransientStorePool transientStorePool = null;
     private String fileName;
+    // fileFromOffset 是指该文件中第一条消息的全局偏移量，这个也是文件名称构建的规则，以第一个消息的 offset 作为文件名
     private long fileFromOffset;
     private File file;
     private MappedByteBuffer mappedByteBuffer;
